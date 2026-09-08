@@ -3,8 +3,8 @@
     "Author": "XeldarAlz",
     "Name": "Aetherphone Beta",
     "InternalName": "AetherphoneBeta",
-    "AssemblyVersion": "0.0.0.0",
-    "TestingAssemblyVersion": "0.0.0.0",
+    "AssemblyVersion": "1.0.1.1",
+    "TestingAssemblyVersion": "1.0.1.1",
     "Description": "The beta channel for Aetherphone: builds straight off the development branch, installed side by side with the stable plugin so you can test what is coming next without giving up the phone you use every day.",
     "Punchline": "The next Aetherphone, before everyone else.",
     "RepoUrl": "https://github.com/XeldarAlz/Aetherphone-Beta",
@@ -32,6 +32,6 @@
     "IsTestingExclusive": false,
     "AcceptsFeedback": true,
     "DownloadCount": 0,
-    "LastUpdate": "0"
+    "LastUpdate": "1788840880"
   }
 ]
