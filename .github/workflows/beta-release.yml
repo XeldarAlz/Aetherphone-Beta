@@ -204,6 +204,13 @@ jobs:
           $json[0].TestingAssemblyVersion = $version
           $json[0].DownloadCount = [int]'${{ steps.count.outputs.total }}'
           $json[0] | Add-Member -NotePropertyName 'LastUpdate' -NotePropertyValue ([string][int][double]::Parse((Get-Date -UFormat %s))) -Force
+
+          # Every release here is a prerelease, and /releases/latest/ skips
+          # prereleases, so that URL 404s. Point at the tag this run just made.
+          $download = "https://github.com/$($env:GITHUB_REPOSITORY)/releases/download/${{ steps.build.outputs.tag }}/latest.zip"
+          $json[0].DownloadLinkInstall = $download
+          $json[0].DownloadLinkUpdate = $download
+          $json[0].DownloadLinkTesting = $download
           # -AsArray preserves the array wrapper Dalamud requires; piping a
           # single-element array unrolls it and loses the brackets.
           ConvertTo-Json -InputObject $json -Depth 10 -AsArray | Set-Content -Path 'repo.json' -Encoding utf8
