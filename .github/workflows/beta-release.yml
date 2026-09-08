@@ -1,0 +1,273 @@
+name: Release Aetherphone Beta
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag or commit of FFXIV-Aetherphone to build'
+        required: false
+        default: 'dev'
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: beta-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      SOURCE_REPOSITORY: XeldarAlz/FFXIV-Aetherphone
+      SOURCE_REF: ${{ inputs.ref || 'dev' }}
+
+    steps:
+      - name: Checkout the beta repository
+        uses: actions/checkout@v7
+        with:
+          path: beta
+          fetch-depth: 0
+          # A PAT keeps working if main ever becomes a protected branch; the
+          # built-in token is enough while it is not.
+          token: ${{ secrets.HUB_REPO_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Checkout the plugin source
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ env.SOURCE_REPOSITORY }}
+          ref: ${{ env.SOURCE_REF }}
+          path: plugin
+          # Full history so the compare range in the notes and the +sha in
+          # InformationalVersion both resolve.
+          fetch-depth: 0
+
+      - name: Resolve the beta version
+        id: build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $props = Get-Content -Raw 'plugin/Directory.Build.props'
+          if ($props -notmatch '<Version>([0-9]+(?:\.[0-9]+){2,3})</Version>') {
+            throw 'Could not read <Version> from Directory.Build.props'
+          }
+
+          $parts = $Matches[1].Split('.')
+          # Beta versions are their own line: the stable major.minor.build plus
+          # the run number, so every build is strictly newer than the last one.
+          $version = "$($parts[0]).$($parts[1]).$($parts[2]).$($env:GITHUB_RUN_NUMBER)"
+          $sha = (git -C plugin rev-parse HEAD).Trim()
+          $shortSha = (git -C plugin rev-parse --short HEAD).Trim()
+
+          $previousSha = ''
+          if (Test-Path 'beta/beta-state.json') {
+            $previousSha = (Get-Content -Raw 'beta/beta-state.json' | ConvertFrom-Json).Sha
+          }
+
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$version"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "tag=beta-v$version"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "sha=$sha"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "short_sha=$shortSha"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "previous_sha=$previousSha"
+          Write-Host "Building beta $version from $env:SOURCE_REF ($shortSha)"
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Download Dalamud
+        shell: pwsh
+        run: |
+          $dalamudUrl = "https://goatcorp.github.io/dalamud-distrib/latest.zip"
+          $dalamudDir = "$env:AppData\XIVLauncher\addon\Hooks\dev"
+          New-Item -ItemType Directory -Force -Path $dalamudDir | Out-Null
+          Invoke-WebRequest -Uri $dalamudUrl -OutFile dalamud.zip
+          Expand-Archive -Path dalamud.zip -DestinationPath $dalamudDir -Force
+          Remove-Item dalamud.zip
+
+      - name: Restore (locked)
+        run: dotnet restore plugin/Aetherphone.sln --locked-mode
+
+      - name: Build (Release, beta channel)
+        run: >
+          dotnet build plugin/Aetherphone.sln --configuration Release --no-restore
+          -p:AetherphoneBeta=true
+          -p:Version=${{ steps.build.outputs.version }}
+
+      - name: Stage latest.zip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $src = 'plugin/src/Aetherphone/bin/Release/AetherphoneBeta/latest.zip'
+          if (-not (Test-Path $src)) { throw "Beta plugin zip not found at $src" }
+
+          $manifest = Get-Content -Raw 'plugin/src/Aetherphone/bin/Release/AetherphoneBeta/AetherphoneBeta.json' | ConvertFrom-Json
+          if ($manifest.InternalName -ne 'AetherphoneBeta') {
+            throw "Built manifest carries InternalName '$($manifest.InternalName)'; the beta channel must stay side by side with the stable plugin."
+          }
+          if ($manifest.AssemblyVersion -ne '${{ steps.build.outputs.version }}') {
+            throw "Built manifest is ${{ steps.build.outputs.version }} in name only: AssemblyVersion is $($manifest.AssemblyVersion)."
+          }
+
+          Copy-Item $src 'latest.zip' -Force
+
+      - name: Write the release notes
+        id: notes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sourceUrl = "https://github.com/$env:SOURCE_REPOSITORY"
+          $lines = @(
+            "Built from ``$env:SOURCE_REF`` at [``${{ steps.build.outputs.short_sha }}``]($sourceUrl/commit/${{ steps.build.outputs.sha }})."
+            ''
+            'This is a preview build. It installs next to the stable plugin, keeps its own settings and opens with `/phonebeta`.'
+          )
+
+          $previous = '${{ steps.build.outputs.previous_sha }}'
+          if (-not [string]::IsNullOrWhiteSpace($previous)) {
+            $lines += ''
+            $lines += "[What changed since the last beta]($sourceUrl/compare/$previous...${{ steps.build.outputs.sha }})"
+            $log = git -C plugin log --no-merges --pretty=format:'- %s' "$previous..${{ steps.build.outputs.sha }}"
+            if (-not [string]::IsNullOrWhiteSpace($log)) {
+              $lines += ''
+              $lines += $log
+            }
+          }
+
+          $body = ($lines -join "`n")
+          if ($body.Length -gt 60000) { $body = $body.Substring(0, 60000) }
+          Set-Content -Path 'release-notes.md' -Value $body -Encoding utf8
+
+      - name: Create the beta release
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          tag_name: ${{ steps.build.outputs.tag }}
+          name: Beta ${{ steps.build.outputs.version }}
+          body_path: release-notes.md
+          files: latest.zip
+          prerelease: true
+          fail_on_unmatched_files: true
+
+      - name: Fetch total download count
+        id: count
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          total=$(gh api "repos/${{ github.repository }}/releases" --paginate \
+            --jq '[.[].assets[].download_count] | add // 0')
+          echo "total=$total" >> "$GITHUB_OUTPUT"
+          echo "Total beta downloads across all releases: $total"
+
+      - name: Publish the manifest
+        shell: pwsh
+        working-directory: beta
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '${{ steps.build.outputs.version }}'
+          $json = Get-Content -Raw -Path 'repo.json' | ConvertFrom-Json
+          $json[0].AssemblyVersion = $version
+          $json[0].TestingAssemblyVersion = $version
+          $json[0].DownloadCount = [int]'${{ steps.count.outputs.total }}'
+          $json[0] | Add-Member -NotePropertyName 'LastUpdate' -NotePropertyValue ([string][int][double]::Parse((Get-Date -UFormat %s))) -Force
+          # -AsArray preserves the array wrapper Dalamud requires; piping a
+          # single-element array unrolls it and loses the brackets.
+          ConvertTo-Json -InputObject $json -Depth 10 -AsArray | Set-Content -Path 'repo.json' -Encoding utf8
+
+          $state = [ordered]@{
+            SourceRepository = $env:SOURCE_REPOSITORY
+            Ref              = $env:SOURCE_REF
+            Sha              = '${{ steps.build.outputs.sha }}'
+            Version          = $version
+            Tag              = '${{ steps.build.outputs.tag }}'
+            BuiltAt          = (Get-Date).ToUniversalTime().ToString('o')
+          }
+          ConvertTo-Json -InputObject $state -Depth 5 | Set-Content -Path 'beta-state.json' -Encoding utf8
+
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add repo.json beta-state.json
+          if (-not (git status --porcelain)) {
+            Write-Host 'Nothing to commit.'
+            exit 0
+          }
+
+          git commit -m "Beta $version from ${{ steps.build.outputs.short_sha }}"
+          for ($attempt = 1; $attempt -le 5; $attempt++) {
+            git fetch origin main
+            git rebase -X theirs origin/main
+            if ($LASTEXITCODE -ne 0) {
+              git rebase --abort 2>$null
+              Write-Host "Rebase failed (attempt $attempt); retrying..."
+              Start-Sleep -Seconds 2
+              continue
+            }
+            git push origin HEAD:main
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            Write-Host "Push rejected (attempt $attempt); retrying after rebase..."
+            Start-Sleep -Seconds 2
+          }
+          Write-Error 'Failed to push the beta manifest after 5 attempts.'
+          exit 1
+
+      - name: Announce the beta on Discord
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          WEBHOOK_URL: ${{ secrets.BETA_WEBHOOK_URL }}
+          PING_ROLE_ID: ${{ vars.BETA_PING_ROLE_ID }}
+          TAG: ${{ steps.build.outputs.tag }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:WEBHOOK_URL)) {
+            Write-Host 'BETA_WEBHOOK_URL not set; skipping the announcement.'
+            exit 0
+          }
+
+          $icon = 'https://raw.githubusercontent.com/XeldarAlz/FFXIV-Aetherphone/master/src/Aetherphone/Images/Icon.png'
+          $rel = gh release view $env:TAG --json name,tagName,body,url,publishedAt | ConvertFrom-Json
+
+          $desc = if ($null -eq $rel.body) { '' } else { [string]$rel.body }
+          $desc = $desc.Replace("`r", '').Replace([char]0x2014, '-').Replace([char]0x2013, '-')
+          if ($desc.Length -gt 3800) { $desc = $desc.Substring(0, 3800) + "`n`n...full notes on GitHub" }
+
+          $content = '🧪 **A new beta build is up for testing!**'
+          $pingRole = $env:PING_ROLE_ID
+          if (-not [string]::IsNullOrWhiteSpace($pingRole)) {
+            $content = "<@&$pingRole> $content"
+          }
+
+          $payload = [ordered]@{
+            username   = 'Aetherphone Beta'
+            avatar_url = $icon
+            content    = $content
+            embeds     = @(
+              [ordered]@{
+                author      = [ordered]@{ name = 'Aetherphone Beta'; url = "https://github.com/$($env:GH_REPO)/releases"; icon_url = $icon }
+                title       = $rel.name
+                url         = $rel.url
+                description = $desc
+                color       = 10197915
+                fields      = @(
+                  [ordered]@{ name = 'Version'; value = '`' + $rel.tagName + '`'; inline = $true }
+                  [ordered]@{ name = 'Channel'; value = 'Beta'; inline = $true }
+                )
+                thumbnail   = [ordered]@{ url = $icon }
+                footer      = [ordered]@{ text = 'Aetherphone Beta'; icon_url = $icon }
+                timestamp   = $rel.publishedAt
+              }
+            )
+          }
+
+          if (-not [string]::IsNullOrWhiteSpace($pingRole)) {
+            $payload['allowed_mentions'] = [ordered]@{ roles = @($pingRole) }
+          }
+
+          $json = $payload | ConvertTo-Json -Depth 10
+          if ($json.Contains([char]0x2014) -or $json.Contains([char]0x2013)) { throw 'Em/en dash detected in payload' }
+          $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+          $resp = Invoke-WebRequest -Uri $env:WEBHOOK_URL -Method Post -Body $bytes -ContentType 'application/json; charset=utf-8' -UseBasicParsing
+          Write-Host "Discord responded: $($resp.StatusCode) $($resp.StatusDescription) for $($env:TAG)"
