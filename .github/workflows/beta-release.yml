@@ -119,26 +119,58 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $sourceUrl = "https://github.com/$env:SOURCE_REPOSITORY"
+          $commitUrl = "$sourceUrl/commit/${{ steps.build.outputs.sha }}"
+          $previous = '${{ steps.build.outputs.previous_sha }}'
+
+          $subjects = @()
+          $compareUrl = ''
+          if (-not [string]::IsNullOrWhiteSpace($previous)) {
+            $compareUrl = "$sourceUrl/compare/$previous...${{ steps.build.outputs.sha }}"
+            $log = git -C plugin log --no-merges --pretty=format:'%s' "$previous..${{ steps.build.outputs.sha }}"
+            if (-not [string]::IsNullOrWhiteSpace($log)) {
+              $subjects = @($log -split "`n" | Where-Object { $_.Trim().Length -gt 0 })
+            }
+          }
+
           $lines = @(
-            "Built from ``$env:SOURCE_REF`` at [``${{ steps.build.outputs.short_sha }}``]($sourceUrl/commit/${{ steps.build.outputs.sha }})."
+            "Built from ``$env:SOURCE_REF`` at [``${{ steps.build.outputs.short_sha }}``]($commitUrl)."
             ''
             'This is a preview build. It installs next to the stable plugin, keeps its own settings and opens with `/phonebeta`.'
           )
-
-          $previous = '${{ steps.build.outputs.previous_sha }}'
-          if (-not [string]::IsNullOrWhiteSpace($previous)) {
+          if (-not [string]::IsNullOrWhiteSpace($compareUrl)) {
             $lines += ''
-            $lines += "[What changed since the last beta]($sourceUrl/compare/$previous...${{ steps.build.outputs.sha }})"
-            $log = git -C plugin log --no-merges --pretty=format:'- %s' "$previous..${{ steps.build.outputs.sha }}"
-            if (-not [string]::IsNullOrWhiteSpace($log)) {
+            $lines += "[What changed since the last beta]($compareUrl)"
+            if ($subjects.Count -gt 0) {
               $lines += ''
-              $lines += $log
+              $lines += ($subjects | ForEach-Object { "- $_" })
             }
           }
 
           $body = ($lines -join "`n")
           if ($body.Length -gt 60000) { $body = $body.Substring(0, 60000) }
           Set-Content -Path 'release-notes.md' -Value $body -Encoding utf8
+
+          # Discord reads its own summary: an embed field caps at 1024 characters,
+          # so the full list above stays on GitHub and only the head of it travels.
+          $shown = @()
+          $budget = 900
+          foreach ($subject in $subjects) {
+            if ($shown.Count -ge 8) { break }
+            $bullet = "- $subject"
+            if ($bullet.Length -gt 120) { $bullet = $bullet.Substring(0, 117) + '...' }
+            if (($budget - $bullet.Length - 1) -lt 0) { break }
+            $budget -= ($bullet.Length + 1)
+            $shown += $bullet
+          }
+
+          $remaining = $subjects.Count - $shown.Count
+          if ($remaining -gt 0) {
+            $shown += "- and $remaining more"
+          }
+
+          Set-Content -Path 'discord-changes.txt' -Value ($shown -join "`n") -Encoding utf8
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "compare_url=$compareUrl"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "change_count=$($subjects.Count)"
 
       - name: Create the beta release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
@@ -215,11 +247,15 @@ jobs:
       - name: Announce the beta on Discord
         shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           WEBHOOK_URL: ${{ secrets.BETA_WEBHOOK_URL }}
           PING_ROLE_ID: ${{ vars.BETA_PING_ROLE_ID }}
           TAG: ${{ steps.build.outputs.tag }}
+          VERSION: ${{ steps.build.outputs.version }}
+          SHA: ${{ steps.build.outputs.sha }}
+          SHORT_SHA: ${{ steps.build.outputs.short_sha }}
+          COMPARE_URL: ${{ steps.notes.outputs.compare_url }}
+          CHANGE_COUNT: ${{ steps.notes.outputs.change_count }}
         run: |
           $ErrorActionPreference = 'Stop'
           if ([string]::IsNullOrWhiteSpace($env:WEBHOOK_URL)) {
@@ -228,17 +264,50 @@ jobs:
           }
 
           $icon = 'https://raw.githubusercontent.com/XeldarAlz/FFXIV-Aetherphone/master/src/Aetherphone/Images/Icon.png'
-          $rel = gh release view $env:TAG --json name,tagName,body,url,publishedAt | ConvertFrom-Json
+          $sourceUrl = "https://github.com/$env:SOURCE_REPOSITORY"
+          $releaseUrl = "https://github.com/$($env:GH_REPO)/releases/tag/$($env:TAG)"
+          $manifestUrl = 'https://raw.githubusercontent.com/XeldarAlz/Aetherphone-Beta/main/repo.json'
 
-          $desc = if ($null -eq $rel.body) { '' } else { [string]$rel.body }
-          $desc = $desc.Replace("`r", '').Replace([char]0x2014, '-').Replace([char]0x2013, '-')
-          if ($desc.Length -gt 3800) { $desc = $desc.Substring(0, 3800) + "`n`n...full notes on GitHub" }
+          # One row of three, then the wide fields. Discord caps a field value at
+          # 1024 characters and the whole embed at 6000.
+          $fields = @(
+            [ordered]@{ name = 'Version'; value = '`' + $env:VERSION + '`'; inline = $true }
+            [ordered]@{ name = 'Source'; value = "[``$env:SOURCE_REF@$env:SHORT_SHA``]($sourceUrl/commit/$env:SHA)"; inline = $true }
+          )
 
-          $content = '🧪 **A new beta build is up for testing!**'
+          $count = 0
+          [void][int]::TryParse($env:CHANGE_COUNT, [ref]$count)
+          if ($count -gt 0 -and -not [string]::IsNullOrWhiteSpace($env:COMPARE_URL)) {
+            $label = if ($count -eq 1) { '1 commit' } else { "$count commits" }
+            $fields += [ordered]@{ name = 'Changes'; value = "[$label]($env:COMPARE_URL)"; inline = $true }
+          }
+
+          if (Test-Path 'discord-changes.txt') {
+            $changes = (Get-Content -Raw 'discord-changes.txt')
+            if (-not [string]::IsNullOrWhiteSpace($changes)) {
+              $fields += [ordered]@{ name = "What's new"; value = $changes.Trim(); inline = $false }
+            }
+          }
+
+          $install = @(
+            'Already on the beta? Dalamud offers the update on its own.'
+            'New here? Add this repository under Dalamud Settings, Experimental, then install **Aetherphone Beta**:'
+            '```'
+            $manifestUrl
+            '```'
+          ) -join "`n"
+          $fields += [ordered]@{ name = 'Get it'; value = $install; inline = $false }
+
+          $content = '🧪 **New dev build dropped!**'
           $pingRole = $env:PING_ROLE_ID
           if (-not [string]::IsNullOrWhiteSpace($pingRole)) {
             $content = "<@&$pingRole> $content"
           }
+
+          $description = @(
+            "Fresh off ``$env:SOURCE_REF``, straight from the workbench."
+            'It sits beside your stable phone with its own settings and opens with `/phonebeta`, so nothing you use every day is disturbed.'
+          ) -join "`n`n"
 
           $payload = [ordered]@{
             username   = 'Aetherphone Beta'
@@ -247,17 +316,16 @@ jobs:
             embeds     = @(
               [ordered]@{
                 author      = [ordered]@{ name = 'Aetherphone Beta'; url = "https://github.com/$($env:GH_REPO)/releases"; icon_url = $icon }
-                title       = $rel.name
-                url         = $rel.url
-                description = $desc
-                color       = 10197915
-                fields      = @(
-                  [ordered]@{ name = 'Version'; value = '`' + $rel.tagName + '`'; inline = $true }
-                  [ordered]@{ name = 'Channel'; value = 'Beta'; inline = $true }
-                )
+                title       = "Beta $($env:VERSION)"
+                url         = $releaseUrl
+                description = $description
+                # Teal 2DD4BF, deliberately not the stable release purple, so a
+                # beta post is never mistaken for a release in the same channel.
+                color       = 3003583
+                fields      = $fields
                 thumbnail   = [ordered]@{ url = $icon }
-                footer      = [ordered]@{ text = 'Aetherphone Beta'; icon_url = $icon }
-                timestamp   = $rel.publishedAt
+                footer      = [ordered]@{ text = 'Aetherphone Beta · testing channel'; icon_url = $icon }
+                timestamp   = (Get-Date).ToUniversalTime().ToString('o')
               }
             )
           }
