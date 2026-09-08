@@ -25,9 +25,12 @@ It installs next to the stable plugin instead of replacing it. Both can stay ena
 | Command | `/phone` | `/phonebeta` |
 | Settings and data | its own | its own |
 | Aethernet server | live | test server by default |
+| Setup wizard and tutorials | shown once | skipped |
 
 Because the two builds keep separate settings, the beta starts as a fresh phone: wallpaper, apps and preferences do
-not carry over.
+not carry over. It skips the first run setup wizard and the in app tutorials and drops you straight on the home
+screen, since a tester reinstalls often. Tutorials can be turned back on under **Settings, Tutorials** if you want
+to review one.
 
 ## The test server
 
