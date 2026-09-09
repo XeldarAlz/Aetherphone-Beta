@@ -3,8 +3,8 @@
     "Author": "XeldarAlz",
     "Name": "Aetherphone Beta",
     "InternalName": "AetherphoneBeta",
-    "AssemblyVersion": "1.0.1.5",
-    "TestingAssemblyVersion": "1.0.1.5",
+    "AssemblyVersion": "1.0.1.6",
+    "TestingAssemblyVersion": "1.0.1.6",
     "Description": "The beta channel for Aetherphone: builds straight off the development branch, installed side by side with the stable plugin so you can test what is coming next without giving up the phone you use every day.",
     "Punchline": "The next Aetherphone, before everyone else.",
     "RepoUrl": "https://github.com/XeldarAlz/Aetherphone-Beta",
@@ -26,12 +26,12 @@
     ],
     "DalamudApiLevel": 15,
     "IconUrl": "https://raw.githubusercontent.com/XeldarAlz/FFXIV-Aetherphone/master/src/Aetherphone/Images/Icon.png",
-    "DownloadLinkInstall": "https://github.com/XeldarAlz/Aetherphone-Beta/releases/download/beta-v1.0.1.5/latest.zip",
-    "DownloadLinkUpdate": "https://github.com/XeldarAlz/Aetherphone-Beta/releases/download/beta-v1.0.1.5/latest.zip",
-    "DownloadLinkTesting": "https://github.com/XeldarAlz/Aetherphone-Beta/releases/download/beta-v1.0.1.5/latest.zip",
+    "DownloadLinkInstall": "https://github.com/XeldarAlz/Aetherphone-Beta/releases/download/beta-v1.0.1.6/latest.zip",
+    "DownloadLinkUpdate": "https://github.com/XeldarAlz/Aetherphone-Beta/releases/download/beta-v1.0.1.6/latest.zip",
+    "DownloadLinkTesting": "https://github.com/XeldarAlz/Aetherphone-Beta/releases/download/beta-v1.0.1.6/latest.zip",
     "IsTestingExclusive": false,
     "AcceptsFeedback": true,
-    "DownloadCount": 21,
-    "LastUpdate": "1788939040"
+    "DownloadCount": 26,
+    "LastUpdate": "1788975809"
   }
 ]
