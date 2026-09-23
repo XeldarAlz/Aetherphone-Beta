@@ -12,7 +12,7 @@ that produces them.
    **Custom Plugin Repositories**:
 
    ```
-   https://raw.githubusercontent.com/XeldarAlz/Aetherphone-Beta/main/repo.json
+   https://aetherphone.net/beta/repo.json
    ```
 
 2. Save, then open the **Plugin Installer** and install **Aetherphone Beta**.

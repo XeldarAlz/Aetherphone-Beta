@@ -273,7 +273,7 @@ jobs:
           $icon = 'https://raw.githubusercontent.com/XeldarAlz/FFXIV-Aetherphone/master/src/Aetherphone/Images/Icon.png'
           $sourceUrl = "https://github.com/$env:SOURCE_REPOSITORY"
           $releaseUrl = "https://github.com/$($env:GH_REPO)/releases/tag/$($env:TAG)"
-          $manifestUrl = 'https://raw.githubusercontent.com/XeldarAlz/Aetherphone-Beta/main/repo.json'
+          $manifestUrl = 'https://aetherphone.net/beta/repo.json'
 
           # One row of three, then the wide fields. Discord caps a field value at
           # 1024 characters and the whole embed at 6000.
