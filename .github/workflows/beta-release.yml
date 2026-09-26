@@ -252,6 +252,7 @@ jobs:
           exit 1
 
       - name: Announce the beta on Discord
+        continue-on-error: true
         shell: pwsh
         env:
           GH_REPO: ${{ github.repository }}
@@ -316,6 +317,34 @@ jobs:
             'It sits beside your stable phone with its own settings and opens with `/phonebeta`, so nothing you use every day is disturbed.'
           ) -join "`n`n"
 
+          # The newest changelog entry in the built tree is the release testers are
+          # previewing. It rides along in full until that version ships as a tag;
+          # after that a beta post carries the commit list only.
+          $pages = @()
+          $changelogVersion = ''
+          $notesScript = 'plugin/.github/scripts/Get-ChangelogNotes.ps1'
+          $changelogData = 'plugin/src/Aetherphone/Core/Changelog/ChangelogData.cs'
+          if ((Test-Path $notesScript) -and (Test-Path $changelogData)) {
+            $newest = [regex]::Match((Get-Content -Raw $changelogData), 'new ChangelogEntry\(\s*"([^"]+)"')
+            if ($newest.Success) {
+              $changelogVersion = $newest.Groups[1].Value
+              $shipped = git ls-remote --tags "$sourceUrl.git" "refs/tags/v$changelogVersion"
+              if ([string]::IsNullOrWhiteSpace($shipped)) {
+                $pages = @(& $notesScript -Version $changelogVersion -ChangelogDataPath $changelogData -LocalizationPath 'plugin/src/Aetherphone/Core/Localization/L.cs' -ChunkLimit 3500)
+              } else {
+                Write-Host "Changelog $changelogVersion already shipped as v$changelogVersion; posting the commit list only."
+              }
+            }
+          } else {
+            Write-Host 'No changelog script at this ref; posting the commit list only.'
+          }
+          for ($pageIndex = 0; $pageIndex -lt $pages.Count; $pageIndex++) {
+            $pages[$pageIndex] = $pages[$pageIndex].Replace("`r", '').Replace([char]0x2014, '-').Replace([char]0x2013, '-')
+          }
+          if ($pages.Count -gt 0) {
+            $description += "`n`n__**Changelog so far for $changelogVersion**__`n`n" + $pages[0]
+          }
+
           $payload = [ordered]@{
             username   = 'Aetherphone Beta'
             avatar_url = $icon
@@ -341,8 +370,29 @@ jobs:
             $payload['allowed_mentions'] = [ordered]@{ roles = @($pingRole) }
           }
 
-          $json = $payload | ConvertTo-Json -Depth 10
-          if ($json.Contains([char]0x2014) -or $json.Contains([char]0x2013)) { throw 'Em/en dash detected in payload' }
-          $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
-          $resp = Invoke-WebRequest -Uri $env:WEBHOOK_URL -Method Post -Body $bytes -ContentType 'application/json; charset=utf-8' -UseBasicParsing
-          Write-Host "Discord responded: $($resp.StatusCode) $($resp.StatusDescription) for $($env:TAG)"
+          function Send-Payload($payload) {
+            $json = $payload | ConvertTo-Json -Depth 10
+            if ($json.Contains([char]0x2014) -or $json.Contains([char]0x2013)) { throw 'Em/en dash detected in payload' }
+            $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+            $resp = Invoke-WebRequest -Uri $env:WEBHOOK_URL -Method Post -Body $bytes -ContentType 'application/json; charset=utf-8' -UseBasicParsing
+            Write-Host "Discord responded: $($resp.StatusCode) $($resp.StatusDescription) for $($env:TAG)"
+          }
+
+          Send-Payload $payload
+
+          for ($pageIndex = 1; $pageIndex -lt $pages.Count; $pageIndex++) {
+            Start-Sleep -Seconds 1
+            Send-Payload ([ordered]@{
+              username   = 'Aetherphone Beta'
+              avatar_url = $icon
+              embeds     = @(
+                [ordered]@{
+                  title       = "Beta $($env:VERSION) (changelog continued, $($pageIndex + 1) of $($pages.Count))"
+                  url         = $releaseUrl
+                  description = $pages[$pageIndex]
+                  color       = 3003583
+                  footer      = [ordered]@{ text = 'Aetherphone Beta · testing channel'; icon_url = $icon }
+                }
+              )
+            })
+          }
