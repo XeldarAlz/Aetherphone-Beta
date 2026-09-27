@@ -149,26 +149,6 @@ jobs:
           $body = ($lines -join "`n")
           if ($body.Length -gt 60000) { $body = $body.Substring(0, 60000) }
           Set-Content -Path 'release-notes.md' -Value $body -Encoding utf8
-
-          # Discord reads its own summary: an embed field caps at 1024 characters,
-          # so the full list above stays on GitHub and only the head of it travels.
-          $shown = @()
-          $budget = 900
-          foreach ($subject in $subjects) {
-            if ($shown.Count -ge 8) { break }
-            $bullet = "- $subject"
-            if ($bullet.Length -gt 120) { $bullet = $bullet.Substring(0, 117) + '...' }
-            if (($budget - $bullet.Length - 1) -lt 0) { break }
-            $budget -= ($bullet.Length + 1)
-            $shown += $bullet
-          }
-
-          $remaining = $subjects.Count - $shown.Count
-          if ($remaining -gt 0) {
-            $shown += "- and $remaining more"
-          }
-
-          Set-Content -Path 'discord-changes.txt' -Value ($shown -join "`n") -Encoding utf8
           Add-Content -Path $env:GITHUB_OUTPUT -Value "compare_url=$compareUrl"
           Add-Content -Path $env:GITHUB_OUTPUT -Value "change_count=$($subjects.Count)"
 
@@ -290,13 +270,6 @@ jobs:
             $fields += [ordered]@{ name = 'Changes'; value = "[$label]($env:COMPARE_URL)"; inline = $true }
           }
 
-          if (Test-Path 'discord-changes.txt') {
-            $changes = (Get-Content -Raw 'discord-changes.txt')
-            if (-not [string]::IsNullOrWhiteSpace($changes)) {
-              $fields += [ordered]@{ name = "What's new"; value = $changes.Trim(); inline = $false }
-            }
-          }
-
           $install = @(
             'Already on the beta? Dalamud offers the update on its own.'
             'New here? Add this repository under Dalamud Settings, Experimental, then install **Aetherphone Beta**:'
@@ -319,7 +292,7 @@ jobs:
 
           # The newest changelog entry in the built tree is the release testers are
           # previewing. It rides along in full until that version ships as a tag;
-          # after that a beta post carries the commit list only.
+          # after that a beta post carries the compare link only.
           $pages = @()
           $changelogVersion = ''
           $notesScript = 'plugin/.github/scripts/Get-ChangelogNotes.ps1'
@@ -332,11 +305,11 @@ jobs:
               if ([string]::IsNullOrWhiteSpace($shipped)) {
                 $pages = @(& $notesScript -Version $changelogVersion -ChangelogDataPath $changelogData -LocalizationPath 'plugin/src/Aetherphone/Core/Localization/L.cs' -ChunkLimit 3500)
               } else {
-                Write-Host "Changelog $changelogVersion already shipped as v$changelogVersion; posting the commit list only."
+                Write-Host "Changelog $changelogVersion already shipped as v$changelogVersion; posting the compare link only."
               }
             }
           } else {
-            Write-Host 'No changelog script at this ref; posting the commit list only.'
+            Write-Host 'No changelog script at this ref; posting the compare link only.'
           }
           for ($pageIndex = 0; $pageIndex -lt $pages.Count; $pageIndex++) {
             $pages[$pageIndex] = $pages[$pageIndex].Replace("`r", '').Replace([char]0x2014, '-').Replace([char]0x2013, '-')
