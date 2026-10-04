@@ -53,10 +53,22 @@ jobs:
             throw 'Could not read <Version> from Directory.Build.props'
           }
 
-          $parts = $Matches[1].Split('.')
-          # Beta versions are their own line: the stable major.minor.build plus
+          $base = [version]$Matches[1]
+
+          # The newest changelog entry is the release the beta previews. It wins
+          # over the props version so a 1.1.0.0 preview is labelled 1.1.0.x, but
+          # never drags the base below what the props already declare.
+          $changelogData = 'plugin/src/Aetherphone/Core/Changelog/ChangelogData.cs'
+          if (Test-Path $changelogData) {
+            $newest = [regex]::Match((Get-Content -Raw $changelogData), 'new ChangelogEntry\(\s*"([0-9]+(?:\.[0-9]+){2,3})"')
+            if ($newest.Success -and [version]$newest.Groups[1].Value -gt $base) {
+              $base = [version]$newest.Groups[1].Value
+            }
+          }
+
+          # Beta versions are their own line: the previewed major.minor.build plus
           # the run number, so every build is strictly newer than the last one.
-          $version = "$($parts[0]).$($parts[1]).$($parts[2]).$($env:GITHUB_RUN_NUMBER)"
+          $version = "$($base.Major).$($base.Minor).$($base.Build).$($env:GITHUB_RUN_NUMBER)"
           $sha = (git -C plugin rev-parse HEAD).Trim()
           $shortSha = (git -C plugin rev-parse --short HEAD).Trim()
 
