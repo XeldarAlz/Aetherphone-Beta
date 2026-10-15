@@ -40,11 +40,33 @@ account is untouched, and nothing you post while testing reaches the live commun
 To point a beta build at the live server instead, open **Settings, About** and turn **Test server** off. Switching
 signs you out, so you sign in again on the other side.
 
+## Version numbers
+
+A beta carries the version it previews plus its build number in the last part: **1.3.1.3** is beta 3 of 1.3.1.0,
+and **1.3.0.102** is beta 2 of 1.3.0.1. **Settings, About** spells it out as "1.3.1.0 beta 3". The number always goes
+up, so Dalamud offers every new beta as an update.
+
 ## Reporting
 
 Bugs and feedback belong in the main repository:
 [FFXIV-Aetherphone issues](https://github.com/XeldarAlz/FFXIV-Aetherphone/issues). Please say which beta version you
 are on (**Settings, About** shows it) so the report can be matched to a build.
+
+## For maintainers
+
+`beta-release.yml` builds a beta from a plugin ref, publishes it and records it in `builds.json`. It refuses to build
+when the newest changelog entry has already shipped, because a beta always previews an unreleased version.
+
+After every build, `qa-handoff.yml` hands it to the testers: it makes sure the version has a Drive folder with a
+testing sheet and a feedback sheet (copied from templates by the Apps Script web app in `apps-script/`), adds test
+items for what changed to the bottom of the testing sheet, and opens or replies to the version's post in the staff
+server's beta forum. Claude Code writes the test items when `CLAUDE_CODE_OAUTH_TOKEN` is set; without it, or when it
+fails, every new changelog bullet becomes one item. Run it by hand with mode `check` to test the connections, or
+with a tag to retry a build.
+
+Secrets: `DISCORD_BOT_TOKEN`, `DISCORD_BETA_FORUM_ID`, `DISCORD_TESTER_ROLE_ID`, `QA_DRIVE_URL`, `QA_DRIVE_SECRET`
+and optionally `CLAUDE_CODE_OAUTH_TOKEN`. The web app runs as the owner of the beta folder and reads its folder and
+template ids and the shared secret from its script properties.
 
 ## Licence
 
