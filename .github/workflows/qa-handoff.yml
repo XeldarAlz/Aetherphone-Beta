@@ -22,12 +22,13 @@ on:
         required: false
         type: string
       mode:
-        description: 'run, dry-run (no writes) or check (connections only)'
+        description: 'run, dry-run (no writes), refresh (redraw the post, add nothing) or check (connections only)'
         required: true
         type: choice
         options:
           - run
           - dry-run
+          - refresh
           - check
         default: run
       ping:
@@ -93,13 +94,13 @@ jobs:
         run: node beta/.github/scripts/qa-handoff.mjs prepare
 
       - name: Install Claude Code
-        if: env.QA_MODE != 'check' && env.CLAUDE_CODE_OAUTH_TOKEN != ''
+        if: (env.QA_MODE == 'run' || env.QA_MODE == 'dry-run') && env.CLAUDE_CODE_OAUTH_TOKEN != ''
         run: npm install --global @anthropic-ai/claude-code@2.1.301
 
       # Claude only writes a JSON file; when it fails or is not configured, publish falls back to
       # one test item per new changelog bullet, so this step can never block the handoff.
       - name: Write the test items
-        if: env.QA_MODE != 'check' && env.CLAUDE_CODE_OAUTH_TOKEN != ''
+        if: (env.QA_MODE == 'run' || env.QA_MODE == 'dry-run') && env.CLAUDE_CODE_OAUTH_TOKEN != ''
         continue-on-error: true
         timeout-minutes: 15
         working-directory: plugin

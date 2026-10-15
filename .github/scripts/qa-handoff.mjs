@@ -466,11 +466,10 @@ function starterEmbed(state) {
     if (state.drive !== null) {
         lines.push("");
         const summary = sheetSummaryLine(state);
-        lines.push(`**Testing sheet:** [${state.drive.testingName}](${state.drive.testingUrl})${summary.length === 0 ? "" : ` · ${summary}`}`);
-        lines.push(`**Feedback sheet:** [${state.drive.feedbackName}](${state.drive.feedbackUrl})`);
+        lines.push(`**QA sheet:** [${state.drive.testingName}](${state.drive.testingUrl})${summary.length === 0 ? "" : ` · ${summary}`}`);
         lines.push(`**Folder:** [${state.drive.folderName}](${state.drive.folderUrl})`);
         lines.push("");
-        lines.push("Test results go in the Testing sheet, other bugs and ideas in the Feedback sheet. Questions are welcome here.");
+        lines.push("Run the tests in the **Tests** tab and mark your results there. Bugs and ideas outside a test go in the **Feedback** tab. Questions are welcome here.");
     }
     lines.push("");
     lines.push(`**Get it:** already on the beta? Dalamud offers the update on its own. New here? Add \`${ManifestUrl}\` under Dalamud Settings, Experimental, then install **Aetherphone Beta**. Settings, About shows which beta you are on.`);
@@ -636,6 +635,14 @@ async function handoffDiscord(config, state) {
         warn(`A post named "${name}" exists that the bot did not create; the bot keeps its own post. Delete the other one to avoid two posts.`);
     }
     const thread = oldestThread(ours);
+    if (config.mode === "refresh") {
+        if (thread === null) {
+            throw new Error(`There is no ${name} post to refresh.`);
+        }
+        await refreshStarter(config, thread, state);
+        log(`Refreshed the first message of ${name}.`);
+        return;
+    }
     if (thread === null) {
         await createVersionThread(config, forum, state);
         log(`Created the forum post ${name}.`);
@@ -829,8 +836,6 @@ async function prepareCommand(config) {
             folderUrl: drive.folderUrl,
             testingName: drive.testingName,
             testingUrl: drive.testingUrl,
-            feedbackName: drive.feedbackName,
-            feedbackUrl: drive.feedbackUrl,
             areas: drive.areas,
             needs: drive.needs,
             rows: drive.rows,
@@ -870,18 +875,31 @@ function loadClaude(config) {
     }
 }
 
+function itemsToAdd(config, state) {
+    if (config.mode === "refresh") {
+        return { list: [], source: "a refresh adds none" };
+    }
+    const generated = validClaudeItems(state);
+    if (generated === null) {
+        return { list: fallbackItems(state), source: "from the changelog bullets" };
+    }
+    return { list: generated, source: "written by Claude" };
+}
+
 async function publishCommand(config) {
     const state = readJson(join(config.workDirectory, "state.json"), null);
     if (state === null) {
         throw new Error("No state.json; run prepare first.");
     }
+    if (config.mode === "refresh" && !state.newestOfVersion) {
+        throw new Error(`Refresh with the newest beta of ${state.version}; an older one would show a stale build.`);
+    }
     state.claude = loadClaude(config);
     if (state.drive !== null) {
-        const generated = validClaudeItems(state);
-        const items = generated ?? fallbackItems(state);
+        const items = itemsToAdd(config, state);
         const limit = state.firstBuild ? FirstBuildItemLimit : LaterBuildItemLimit;
-        const rows = assignIds(items.slice(0, limit), state);
-        log(`Test items: ${rows.length} to add (${generated === null ? "from the changelog bullets" : "written by Claude"}).`);
+        const rows = assignIds(items.list.slice(0, limit), state);
+        log(`Test items: ${rows.length} to add (${items.source}).`);
         if (config.mode === "dry-run") {
             state.sheet = { added: rows.map(row => row.id), summary: undefined };
         } else {
@@ -924,7 +942,7 @@ async function checkCommand(config) {
     if (hasDrive(config)) {
         try {
             const drive = await driveRequest(config, "ping", {});
-            log(`Drive: web app ok, beta folder ok, templates ok (${drive.testingTemplate}, ${drive.feedbackTemplate}).`);
+            log(`Drive: web app ok, beta folder ok, template ok (${drive.testingTemplate}).`);
         } catch (error) {
             failures += 1;
             warn(`Drive check failed: ${error.message}`);

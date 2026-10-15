@@ -68,10 +68,6 @@ function testingName(version) {
   return 'Aetherphone ' + version + ' Testing';
 }
 
-function feedbackName(version) {
-  return 'Aetherphone ' + version + ' Feedback';
-}
-
 function firstFolder(parent, name) {
   const folders = parent.getFoldersByName(name);
   return folders.hasNext() ? folders.next() : null;
@@ -96,7 +92,6 @@ function ping(properties) {
     ok: true,
     folder: folder.getName(),
     testingTemplate: DriveApp.getFileById(properties.getProperty('TESTING_TEMPLATE_ID')).getName(),
-    feedbackTemplate: DriveApp.getFileById(properties.getProperty('FEEDBACK_TEMPLATE_ID')).getName(),
   };
 }
 
@@ -199,11 +194,8 @@ function ensureVersion(properties, request) {
   const folderName = versionFolderName(version);
   const folder = firstFolder(root, folderName) || root.createFolder(folderName);
   const testing = findOrCopy(folder, testingName(version), properties.getProperty('TESTING_TEMPLATE_ID'));
-  const feedback = findOrCopy(folder, feedbackName(version), properties.getProperty('FEEDBACK_TEMPLATE_ID'));
   const testingBook = SpreadsheetApp.openById(testing.file.getId());
-  const feedbackBook = SpreadsheetApp.openById(feedback.file.getId());
   addBuild(testingBook, build);
-  addBuild(feedbackBook, build);
   const tests = testingBook.getSheetByName(TestsSheetName);
   if (testing.created) {
     const started = request.started ? new Date(request.started) : new Date();
@@ -216,8 +208,6 @@ function ensureVersion(properties, request) {
     folderUrl: folder.getUrl(),
     testingName: testing.file.getName(),
     testingUrl: testing.file.getUrl(),
-    feedbackName: feedback.file.getName(),
-    feedbackUrl: feedback.file.getUrl(),
     areas: readAreas(testingBook),
     needs: readNeeds(tests),
     rows: readRows(tests),

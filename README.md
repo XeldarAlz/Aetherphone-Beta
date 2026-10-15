@@ -57,15 +57,15 @@ are on (**Settings, About** shows it) so the report can be matched to a build.
 `beta-release.yml` builds a beta from a plugin ref, publishes it and records it in `builds.json`. It refuses to build
 when the newest changelog entry has already shipped, because a beta always previews an unreleased version.
 
-After every build, `qa-handoff.yml` hands it to the testers: it makes sure the version has a Drive folder with a
-testing sheet and a feedback sheet (copied from templates by the Apps Script web app in `apps-script/`), adds test
-items for what changed to the bottom of the testing sheet, and opens or replies to the version's post in the staff
-server's beta forum. Claude Code writes the test items when `CLAUDE_CODE_OAUTH_TOKEN` is set; without it, or when it
-fails, every new changelog bullet becomes one item. Run it by hand with mode `check` to test the connections, or
-with a tag to retry a build.
+After every build, `qa-handoff.yml` hands it to the testers: it makes sure the version has a Drive folder with one QA
+sheet (Tests and Feedback tabs, copied from a template by the Apps Script web app in `apps-script/`), adds test items
+for what changed to the bottom of the Tests tab, and opens or replies to the version's post in the staff server's
+beta forum. Claude Code writes the test items when `CLAUDE_CODE_OAUTH_TOKEN` is set; without it, or when it fails,
+every new changelog bullet becomes one item. Run it by hand with mode `check` to test the connections, with a tag to
+retry a build, or with mode `refresh` and the newest tag to redraw a post's first message without adding anything.
 
 Secrets: `DISCORD_BOT_TOKEN`, `DISCORD_BETA_FORUM_ID`, `DISCORD_TESTER_ROLE_ID`, `QA_DRIVE_URL`, `QA_DRIVE_SECRET`
-and optionally `CLAUDE_CODE_OAUTH_TOKEN`. The web app runs as the owner of the beta folder and reads its folder and
+and optionally `CLAUDE_CODE_OAUTH_TOKEN`. The web app runs as the owner of the beta folder and reads the folder and
 template ids and the shared secret from its script properties.
 
 ## Licence
