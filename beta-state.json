@@ -1,8 +1,8 @@
 {
   "SourceRepository": "XeldarAlz/FFXIV-Aetherphone",
   "Ref": "dev",
-  "Sha": "255d4dd538d016036c8432a284948be4e0e74512",
-  "Version": "1.3.0.61",
-  "Tag": "beta-v1.3.0.61",
-  "BuiltAt": "2026-10-14T09:01:57.9635197Z"
+  "Sha": "e8f745317e6bad0cc84fbee29aaaa347ba6506c4",
+  "Version": "1.3.0.62",
+  "Tag": "beta-v1.3.0.62",
+  "BuiltAt": "2026-10-15T00:40:28.4696379Z"
 }
