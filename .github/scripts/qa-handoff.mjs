@@ -27,6 +27,8 @@ const DriveLinkPattern = /https:\/\/(?:docs|drive)\.google\.com\/\S+/g;
 const DashPattern = new RegExp(`\\s*[${String.fromCharCode(0x2013)}${String.fromCharCode(0x2014)}]\\s*`, "g");
 const ConventionalSubjectPattern = /^(\w+)(?:\(([^)]+)\))?!?:\s*(.+)$/;
 const CreditPattern = /,\s*contributed by [^,]+$/i;
+const ExpectPattern = /Expect:/gi;
+const ChangelogKeyPattern = /(?:changelog\.)?(r\d+\.\d+)/g;
 const VisibleCommitTypes = new Set(["feat", "fix", "perf"]);
 const ChangelogDataPath = "src/Aetherphone/Core/Changelog/ChangelogData.cs";
 const LocalizationPath = "src/Aetherphone/Core/Localization/L.cs";
@@ -708,13 +710,37 @@ function validClaudeItems(state) {
     const valid = [];
     for (const item of items) {
         const test = scrubText(item?.test);
-        if (!areas.has(item?.area) || !/Expect:/i.test(test) || test.length > TestTextLimit) {
-            warn("Dropped a generated test item that did not pass validation.");
+        const expectCount = (test.match(ExpectPattern) ?? []).length;
+        if (!areas.has(item?.area) || expectCount !== 1 || test.length > TestTextLimit) {
+            warn(`Dropped a generated test item that did not pass validation (${item?.source ?? "no source"}).`);
             continue;
         }
-        valid.push({ area: item.area, test, needs: (item.needs ?? []).filter(need => needs.has(need)) });
+        valid.push({ area: item.area, test, needs: (item.needs ?? []).filter(need => needs.has(need)), source: String(item.source ?? "") });
     }
     return valid;
+}
+
+function reportCoverage(state, rows) {
+    const covered = new Set();
+    for (const row of rows) {
+        for (const match of (row.source ?? "").matchAll(ChangelogKeyPattern)) {
+            covered.add(match[1]);
+        }
+    }
+    const missing = [];
+    for (const section of state.changelog.sections) {
+        for (const bullet of section.bullets) {
+            const wanted = state.firstBuild || bullet.change !== "unchanged";
+            if (wanted && !covered.has(bullet.key.replace(/^changelog\./, ""))) {
+                missing.push(`${bullet.key.replace(/^changelog\./, "")} (${truncate(scrubText(bullet.text), 70)})`);
+            }
+        }
+    }
+    if (missing.length === 0) {
+        log("Coverage: every changelog bullet in scope has at least one test item.");
+        return;
+    }
+    warn(`Coverage: ${missing.length} changelog ${missing.length === 1 ? "bullet has" : "bullets have"} no test item: ${missing.join("; ")}`);
 }
 
 function assignIds(items, state) {
@@ -737,7 +763,7 @@ function assignIds(items, state) {
         const prefix = prefixes.get(item.area) ?? "OTH";
         const next = (highest.get(prefix) ?? 0) + 1;
         highest.set(prefix, next);
-        rows.push({ id: `${prefix}-${String(next).padStart(3, "0")}`, area: item.area, test: item.test, needs: item.needs.join(", "), build: state.build.version });
+        rows.push({ id: `${prefix}-${String(next).padStart(3, "0")}`, area: item.area, test: item.test, needs: item.needs.join(", "), build: state.build.version, source: item.source ?? "" });
     }
     return rows;
 }
@@ -877,13 +903,13 @@ function loadClaude(config) {
 
 function itemsToAdd(config, state) {
     if (config.mode === "refresh") {
-        return { list: [], source: "a refresh adds none" };
+        return { list: [], source: "a refresh adds none", generated: false };
     }
     const generated = validClaudeItems(state);
     if (generated === null) {
-        return { list: fallbackItems(state), source: "from the changelog bullets" };
+        return { list: fallbackItems(state), source: "from the changelog bullets", generated: false };
     }
-    return { list: generated, source: "written by Claude" };
+    return { list: generated, source: "written by Claude", generated: true };
 }
 
 async function publishCommand(config) {
@@ -900,6 +926,9 @@ async function publishCommand(config) {
         const limit = state.firstBuild ? FirstBuildItemLimit : LaterBuildItemLimit;
         const rows = assignIds(items.list.slice(0, limit), state);
         log(`Test items: ${rows.length} to add (${items.source}).`);
+        if (items.generated) {
+            reportCoverage(state, rows);
+        }
         if (config.mode === "dry-run") {
             state.sheet = { added: rows.map(row => row.id), summary: undefined };
         } else {

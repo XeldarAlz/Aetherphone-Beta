@@ -48,7 +48,7 @@ jobs:
   handoff:
     name: Hand the build to testers
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       SOURCE_REPOSITORY: XeldarAlz/FFXIV-Aetherphone
       BUILD_TAG: ${{ inputs.tag }}
@@ -102,12 +102,12 @@ jobs:
       - name: Write the test items
         if: (env.QA_MODE == 'run' || env.QA_MODE == 'dry-run') && env.CLAUDE_CODE_OAUTH_TOKEN != ''
         continue-on-error: true
-        timeout-minutes: 15
+        timeout-minutes: 25
         working-directory: plugin
         run: >
           claude -p
-          --model sonnet
-          --max-turns 60
+          --model claude-opus-5-5
+          --max-turns 150
           --output-format json
           --json-schema "$(cat ../qa/schema.json)"
           --allowedTools "Read,Grep,Glob,Bash(git log:*),Bash(git show:*),Bash(git diff:*)"
