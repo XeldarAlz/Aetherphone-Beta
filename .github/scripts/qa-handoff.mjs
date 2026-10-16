@@ -518,6 +518,14 @@ function rowsLine(state) {
     return `**Testing sheet:** ${added.length} new test ${added.length === 1 ? "item" : "items"} (${range}). [Open it](${state.drive.testingUrl})`;
 }
 
+function recheckLine(state) {
+    const rechecked = state.sheet?.rechecked ?? [];
+    if (rechecked.length === 0) {
+        return "";
+    }
+    return `**To recheck:** ${rechecked.join(", ")}, fixed in this build.`;
+}
+
 function buildEmbed(state) {
     const build = state.build;
     const previousNumber = state.previousOfVersion?.Build;
@@ -528,6 +536,10 @@ function buildEmbed(state) {
     if (rows.length > 0) {
         lines.push("");
         lines.push(rows);
+    }
+    const recheck = recheckLine(state);
+    if (recheck.length > 0) {
+        lines.push(recheck);
     }
     if (state.compareUrl.length > 0) {
         lines.push("");
@@ -594,10 +606,13 @@ async function replyWithBuild(config, thread, state) {
         await discordRequest(config, "PATCH", `/channels/${thread.id}`, { archived: false });
     }
     const rowCount = state.sheet?.added?.length ?? 0;
-    const mentions = mentionsFor(config, rowCount > 0);
+    const recheckCount = state.sheet?.rechecked?.length ?? 0;
+    const mentions = mentionsFor(config, rowCount > 0 || recheckCount > 0);
     const body = { embeds: [buildEmbed(state)], allowed_mentions: mentions.allowed };
     if (mentions.prefix.length > 0) {
-        body.content = `${mentions.prefix}Beta ${state.build.number} of ${state.version} is up with ${rowCount} new test ${rowCount === 1 ? "item" : "items"}.`;
+        const items = `${rowCount} new test ${rowCount === 1 ? "item" : "items"}`;
+        const rechecks = recheckCount === 0 ? "" : ` and ${recheckCount} ${recheckCount === 1 ? "fix" : "fixes"} to recheck`;
+        body.content = `${mentions.prefix}Beta ${state.build.number} of ${state.version} is up with ${items}${rechecks}.`;
     }
     await discordRequest(config, "POST", `/channels/${thread.id}/messages`, body);
 }
@@ -933,8 +948,12 @@ async function publishCommand(config) {
             state.sheet = { added: rows.map(row => row.id), summary: undefined };
         } else {
             const sheet = await driveRequest(config, "appendTasks", { version: state.version, build: state.build.version, current: state.newestOfVersion, rows });
-            state.sheet = { added: sheet.added, summary: sheet.summary };
+            const rechecked = sheet.rechecked ?? [];
+            state.sheet = { added: sheet.added, rechecked, summary: sheet.summary };
             log(`Drive: added ${sheet.added.length} rows, skipped ${sheet.skipped.length} that already existed.`);
+            if (rechecked.length > 0) {
+                log(`Drive: moved ${rechecked.length} fixed NO-GO ${rechecked.length === 1 ? "row" : "rows"} to RECHECK: ${rechecked.join(", ")}.`);
+            }
         }
     }
     if (!hasDiscord(config)) {

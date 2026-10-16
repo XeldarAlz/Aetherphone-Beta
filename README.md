@@ -63,7 +63,9 @@ After every build, `qa-handoff.yml` hands it to the testers: it makes sure the v
 sheet (Tests and Feedback tabs, copied from a template by the Apps Script web app in `apps-script/`), adds test items
 for what changed to the bottom of the Tests tab, and opens or replies to the version's post in the staff server's
 beta forum. Claude Code writes the test items when `CLAUDE_CODE_OAUTH_TOKEN` is set; without it, or when it fails,
-every new changelog bullet becomes one item. Run it by hand with mode `check` to test the connections, with a tag to
+every new changelog bullet becomes one item. A NO-GO row whose Fixed in names this build or an earlier one turns to
+RECHECK, and the build's post lists it, so a developer marks a fix by filling Fixed in and leaving Status alone. Run it
+by hand with mode `check` to test the connections, with a tag to
 retry a build, or with mode `refresh` and the newest tag to redraw a post's first message without adding anything.
 
 Secrets: `DISCORD_BOT_TOKEN`, `DISCORD_BETA_FORUM_ID`, `DISCORD_TESTER_ROLE_ID`, `QA_DRIVE_URL`, `QA_DRIVE_SECRET`

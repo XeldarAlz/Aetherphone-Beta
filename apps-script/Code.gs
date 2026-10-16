@@ -6,6 +6,10 @@ const WrittenColumnCount = 5;
 const AreaColumn = 7;
 const PrefixColumn = 8;
 const BuildsColumn = 12;
+const StatusColumn = 6;
+const FixedInColumn = 12;
+const NoGoStatus = 'NO-GO';
+const RecheckStatus = 'RECHECK';
 const NeedsCell = 'D5';
 const BuildUnderTestCell = 'E1';
 const StartedCell = 'H1';
@@ -50,7 +54,7 @@ function respond(result) {
 
 function requireVersion(value) {
   const text = String(value || '');
-  if (!/^\d+(\.\d+){2,3}$/.test(text)) {
+  if (!isVersion(text)) {
     throw new Error('Missing or malformed version.');
   }
   return text;
@@ -266,6 +270,50 @@ function appendTasks(properties, request) {
     addBuild(book, build);
     tests.getRange(BuildUnderTestCell).setValue(build);
   }
+  const rechecked = recheckFixed(tests, build);
   SpreadsheetApp.flush();
-  return { ok: true, added: added, skipped: skipped, testingUrl: file.getUrl(), summary: readSummary(tests) };
+  return {
+    ok: true,
+    added: added,
+    skipped: skipped,
+    rechecked: rechecked,
+    testingUrl: file.getUrl(),
+    summary: readSummary(tests),
+  };
+}
+
+function recheckFixed(tests, build) {
+  const last = lastDataRow(tests);
+  if (last < FirstDataRow) {
+    return [];
+  }
+  const values = tests.getRange(FirstDataRow, 1, last - FirstDataRow + 1, ColumnCount).getDisplayValues();
+  const rechecked = [];
+  for (let index = 0; index < values.length; index++) {
+    const row = values[index];
+    const fixedIn = String(row[FixedInColumn - 1]).trim();
+    if (row[StatusColumn - 1] !== NoGoStatus || !isVersion(fixedIn) || compareVersions(fixedIn, build) > 0) {
+      continue;
+    }
+    tests.getRange(FirstDataRow + index, StatusColumn).setValue(RecheckStatus);
+    rechecked.push(row[0]);
+  }
+  return rechecked;
+}
+
+function isVersion(text) {
+  return /^\d+(\.\d+){2,3}$/.test(text);
+}
+
+function compareVersions(left, right) {
+  const leftParts = left.split('.');
+  const rightParts = right.split('.');
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index++) {
+    const difference = Number(leftParts[index] || 0) - Number(rightParts[index] || 0);
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+  return 0;
 }
