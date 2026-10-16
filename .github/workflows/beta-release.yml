@@ -13,6 +13,11 @@ on:
         required: false
         default: true
         type: boolean
+      allow_same_commit:
+        description: 'Build even when the plugin commit is the one the last beta was built from'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -100,6 +105,10 @@ jobs:
           $previousSha = ''
           if (Test-Path 'beta/beta-state.json') {
             $previousSha = (Get-Content -Raw 'beta/beta-state.json' | ConvertFrom-Json).Sha
+          }
+
+          if ($previousSha -eq $sha -and '${{ inputs.allow_same_commit }}' -ne 'true') {
+            throw "The last beta was already built from $shortSha, so this one would ship the same plugin again. Push a change to $env:SOURCE_REF first, or run with allow_same_commit."
           }
 
           Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$version"

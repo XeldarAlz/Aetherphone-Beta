@@ -55,7 +55,9 @@ are on (**Settings, About** shows it) so the report can be matched to a build.
 ## For maintainers
 
 `beta-release.yml` builds a beta from a plugin ref, publishes it and records it in `builds.json`. It refuses to build
-when the newest changelog entry has already shipped, because a beta always previews an unreleased version.
+when the newest changelog entry has already shipped, because a beta always previews an unreleased version, and when
+the ref still points at the commit the last beta was built from, so a second click cannot ship the same plugin again.
+Tick `allow_same_commit` to rebuild on purpose, for example after a change to this repository's packaging.
 
 After every build, `qa-handoff.yml` hands it to the testers: it makes sure the version has a Drive folder with one QA
 sheet (Tests and Feedback tabs, copied from a template by the Apps Script web app in `apps-script/`), adds test items
