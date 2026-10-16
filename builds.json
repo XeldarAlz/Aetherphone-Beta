@@ -46,5 +46,13 @@
     "Sha": "102cbacbf110d43e9a2cdd9c231e0010a25da149",
     "Tag": "beta-v1.3.1.5",
     "BuiltAt": "2026-10-16T15:11:58.5081153Z"
+  },
+  {
+    "Version": "1.3.1.6",
+    "ChangelogVersion": "1.3.1.0",
+    "Build": 6,
+    "Sha": "a0c01e4cfacc993b0d0613739cc187194486665c",
+    "Tag": "beta-v1.3.1.6",
+    "BuiltAt": "2026-10-16T16:36:07.4108832Z"
   }
 ]
