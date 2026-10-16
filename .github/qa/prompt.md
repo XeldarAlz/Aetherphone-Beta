@@ -19,6 +19,10 @@ per line, each opening with Added, Changed or Fixed. Say what a player notices, 
   special is needed.
 - `source`: the changelog key (for example `changelog.r1310.4`) or the short commit hash the item comes from.
 
+`coveredByRechecks`: the changelog bullets and commits you wrote no item for because a row in `fixesToRecheck`
+already tests them. Each entry has `source` (the changelog key or short commit hash) and `recheck` (that row's id).
+Empty when there is none.
+
 ## Writing a test
 
 Every test must be precise, understandable and true.
@@ -67,6 +71,11 @@ Pick the app or part of the phone the tester opens to run the test, from `areas`
 - Otherwise write items only for what changed since the previous beta: bullets whose `change` is `new` or `changed`,
   and commits in `commitsSincePreviousBeta` that change what a player sees. A fix becomes an item that checks the
   bug is gone. Use `git show <hash>` to understand a commit before writing about it.
+- `fixesToRecheck` lists rows a tester failed (or was waiting to retry) whose fix ships in this build. Testers redo
+  each of those rows, so the row is the test for its fix. Do not write an item that checks what such a row already
+  checks, even when a changelog bullet or commit describes that fix: put the bullet or commit in `coveredByRechecks`
+  instead. Write an item for such a fix only for what the row does not cover (another screen, another app, a side
+  effect of the same change), and test only that part.
 - Skip refactors, documentation, CI, tests, translations and performance work nobody can see.
 - Never repeat something already covered in `existingTestItems`.
 - Stay within `maxItems`. When there is more to cover than that, keep the items most likely to find a bug.

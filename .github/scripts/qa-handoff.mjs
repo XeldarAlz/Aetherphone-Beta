@@ -29,6 +29,9 @@ const ConventionalSubjectPattern = /^(\w+)(?:\(([^)]+)\))?!?:\s*(.+)$/;
 const CreditPattern = /,\s*contributed by [^,]+$/i;
 const ExpectPattern = /Expect:/gi;
 const ChangelogKeyPattern = /(?:changelog\.)?(r\d+\.\d+)/g;
+const VersionPattern = /^\d+(\.\d+){2,3}$/;
+const NoGoStatus = "NO-GO";
+const RecheckStatus = "RECHECK";
 const VisibleCommitTypes = new Set(["feat", "fix", "perf"]);
 const ChangelogDataPath = "src/Aetherphone/Core/Changelog/ChangelogData.cs";
 const LocalizationPath = "src/Aetherphone/Core/Localization/L.cs";
@@ -735,12 +738,60 @@ function validClaudeItems(state) {
     return valid;
 }
 
+function compareVersions(left, right) {
+    const leftParts = left.split(".");
+    const rightParts = right.split(".");
+    const length = Math.max(leftParts.length, rightParts.length);
+    for (let index = 0; index < length; index++) {
+        const difference = Number(leftParts[index] ?? 0) - Number(rightParts[index] ?? 0);
+        if (difference !== 0) {
+            return difference;
+        }
+    }
+    return 0;
+}
+
+function fixesToRecheck(state) {
+    return (state.drive?.rows ?? []).filter(row => {
+        const status = String(row.status ?? "").trim();
+        const fixedIn = String(row.fixedIn ?? "").trim();
+        return (status === NoGoStatus || status === RecheckStatus) && VersionPattern.test(fixedIn)
+            && compareVersions(fixedIn, state.build.version) <= 0;
+    });
+}
+
+// The web app only reports the NO-GO rows it moved, so a row a tester had already set to RECHECK and that is fixed
+// in this very build would never be announced.
+function announcedRechecks(state, moved) {
+    const ids = new Set(moved);
+    for (const row of state.drive.rows) {
+        if (String(row.status ?? "").trim() === RecheckStatus && String(row.fixedIn ?? "").trim() === state.build.version) {
+            ids.add(row.id);
+        }
+    }
+    return [...ids];
+}
+
 function reportCoverage(state, rows) {
     const covered = new Set();
     for (const row of rows) {
         for (const match of (row.source ?? "").matchAll(ChangelogKeyPattern)) {
             covered.add(match[1]);
         }
+    }
+    const rechecks = new Set(fixesToRecheck(state).map(row => row.id));
+    const viaRechecks = [];
+    for (const cover of state.claude?.coveredByRechecks ?? []) {
+        if (!rechecks.has(cover?.recheck)) {
+            continue;
+        }
+        for (const match of String(cover.source ?? "").matchAll(ChangelogKeyPattern)) {
+            covered.add(match[1]);
+            viaRechecks.push(`${match[1]} by ${cover.recheck}`);
+        }
+    }
+    if (viaRechecks.length > 0) {
+        log(`Coverage: left to rechecks: ${viaRechecks.join(", ")}.`);
     }
     const missing = [];
     for (const section of state.changelog.sections) {
@@ -799,6 +850,7 @@ function claudePrompt(config, state) {
         previousBetaCommit: state.previous?.Sha ?? "",
         builtCommit: state.build.sha,
         existingTestItems: (state.drive?.rows ?? []).map(row => ({ id: row.id, area: row.area, test: row.test })),
+        fixesToRecheck: fixesToRecheck(state).map(row => ({ id: row.id, area: row.area, test: row.test, fixedIn: row.fixedIn })),
         areas: (state.drive?.areas ?? [{ name: FallbackArea }]).map(area => area.name),
         needs: state.drive?.needs ?? [],
     };
@@ -808,10 +860,21 @@ function claudePrompt(config, state) {
 function claudeSchema(state) {
     const areas = (state.drive?.areas ?? [{ name: FallbackArea }]).map(area => area.name);
     const needs = state.drive?.needs ?? [];
+    const rechecks = fixesToRecheck(state).map(row => row.id);
+    const cover = {
+        type: "object",
+        properties: {
+            source: { type: "string" },
+            recheck: rechecks.length === 0 ? { type: "string" } : { type: "string", enum: rechecks },
+        },
+        required: ["source", "recheck"],
+        additionalProperties: false,
+    };
     return {
         type: "object",
         properties: {
             summary: { type: "array", items: { type: "string" }, maxItems: SummaryLineLimit },
+            coveredByRechecks: rechecks.length === 0 ? { type: "array", maxItems: 0, items: cover } : { type: "array", items: cover },
             items: {
                 type: "array",
                 maxItems: state.firstBuild ? FirstBuildItemLimit : LaterBuildItemLimit,
@@ -828,7 +891,7 @@ function claudeSchema(state) {
                 },
             },
         },
-        required: ["summary", "items"],
+        required: ["summary", "items", "coveredByRechecks"],
         additionalProperties: false,
     };
 }
@@ -948,11 +1011,15 @@ async function publishCommand(config) {
             state.sheet = { added: rows.map(row => row.id), summary: undefined };
         } else {
             const sheet = await driveRequest(config, "appendTasks", { version: state.version, build: state.build.version, current: state.newestOfVersion, rows });
-            const rechecked = sheet.rechecked ?? [];
+            const moved = sheet.rechecked ?? [];
+            const rechecked = announcedRechecks(state, moved);
             state.sheet = { added: sheet.added, rechecked, summary: sheet.summary };
             log(`Drive: added ${sheet.added.length} rows, skipped ${sheet.skipped.length} that already existed.`);
-            if (rechecked.length > 0) {
-                log(`Drive: moved ${rechecked.length} fixed NO-GO ${rechecked.length === 1 ? "row" : "rows"} to RECHECK: ${rechecked.join(", ")}.`);
+            if (moved.length > 0) {
+                log(`Drive: moved ${moved.length} fixed NO-GO ${moved.length === 1 ? "row" : "rows"} to RECHECK: ${moved.join(", ")}.`);
+            }
+            if (rechecked.length > moved.length) {
+                log(`Drive: also announcing rows already on RECHECK and fixed in this build: ${rechecked.slice(moved.length).join(", ")}.`);
             }
         }
     }
