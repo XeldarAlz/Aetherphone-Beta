@@ -117,6 +117,14 @@
     "Build": 2,
     "Sha": "c487b3d956bdb43a7ec0328ed38de376ae2ba092",
     "Tag": "beta-v1.3.3.2",
-    "BuiltAt": "2026-10-19T19:07:01.0459600Z"
+    "BuiltAt": "2026-10-19T19:07:01.04596Z"
+  },
+  {
+    "Version": "1.4.0.1",
+    "ChangelogVersion": "1.4.0.0",
+    "Build": 1,
+    "Sha": "5135cdd53e471e2e7521134582e9d095fc04656b",
+    "Tag": "beta-v1.4.0.1",
+    "BuiltAt": "2026-10-19T21:20:24.2582872Z"
   }
 ]
